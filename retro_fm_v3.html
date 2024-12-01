@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dynamic Radio Tuner</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f0f0f0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+
+    #radio-container {
+      width: 400px;
+      background: #ffffff;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      text-align: center;
+    }
+
+    #province-selector {
+      margin-bottom: 20px;
+    }
+
+    #frequency-display {
+      font-size: 24px;
+      font-weight: bold;
+      margin: 10px 0;
+    }
+
+    #tuner-knob {
+      width: 150px;
+      height: 150px;
+      background: #ddd;
+      border-radius: 50%;
+      margin: 20px auto;
+      position: relative;
+      border: 5px solid #bbb;
+      box-shadow: inset 3px 3px 8px #aaa, inset -3px -3px 8px #fff;
+      transform: rotate(0deg);
+      cursor: pointer;
+      transition: transform 0.2s ease;
+    }
+
+    #tuner-knob:after {
+      content: '';
+      position: absolute;
+      width: 10px;
+      height: 50px;
+      background: #f44;
+      border-radius: 5px;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    #station-info {
+      margin-top: 20px;
+      font-size: 16px;
+      line-height: 1.5;
+    }
+
+    #audio-player {
+      margin-top: 20px;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+<div id="radio-container">
+  <h2>Upesh Studios Internet Radio Tuner</h2>
+  <label for="province-selector">Select Province:</label>
+  <select id="province-selector"></select>
+
+  <div id="frequency-display">-- MHz</div>
+  <div id="tuner-knob"></div>
+
+  <div id="station-info">
+    <div id="station-name">Select a station</div>
+  </div>
+
+  <audio id="audio-player" controls>
+    <source src="" type="audio/mpeg">
+    Your browser does not support the audio element.
+  </audio>
+</div>
+
+<script>
+  let radioStations = [];
+  let availableStations = [];
+  let currentStationIndex = -1;
+  let knobRotation = 0;
+  let isRotatingClockwise = true; // Default rotation direction
+
+  const provinceSelector = document.getElementById('province-selector');
+  const knob = document.getElementById('tuner-knob');
+  const frequencyDisplay = document.getElementById('frequency-display');
+  const stationName = document.getElementById('station-name');
+  const audioPlayer = document.getElementById('audio-player');
+  const audioSource = audioPlayer.querySelector('source');
+
+  // Load data from radio_list.json
+  fetch('radio_list.json')
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return response.json();
+    })
+    .then(data => {
+      radioStations = data;
+      console.log('Radio Stations Loaded:', radioStations); // Debugging log
+      populateProvinceSelector();
+      updateStationsForSelectedProvince();
+    })
+    .catch(error => console.error('Error loading JSON:', error));
+
+  // Populate the province dropdown dynamically
+  function populateProvinceSelector() {
+    const provinces = [...new Set(radioStations.map(station => station.province))];
+    provinces.forEach(province => {
+      const option = document.createElement('option');
+      option.value = province;
+      option.textContent = `Province ${province}`;
+      provinceSelector.appendChild(option);
+    });
+  }
+
+  // Update the stations based on the selected province
+  function updateStationsForSelectedProvince() {
+    const selectedProvince = parseInt(provinceSelector.value);
+    console.log('Selected Province:', selectedProvince); // Debugging log
+
+    // Filter stations by selected province, ensuring frequency is valid (not null or undefined)
+    availableStations = radioStations
+      .filter(station => station.province === selectedProvince && station.frequency != null)
+      .sort((a, b) => a.frequency - b.frequency);
+
+    console.log('Available Stations:', availableStations); // Debugging log
+
+    // Ensure the first station is selected if available stations are found
+    if (availableStations.length > 0) {
+      currentStationIndex = 0; // Select the first station by default
+      knobRotation = 0; // Reset knob rotation
+      knob.style.transform = `rotate(${knobRotation}deg)`;
+      updateStationInfo(); // Update station info
+    } else {
+      frequencyDisplay.textContent = '-- MHz';
+      stationName.textContent = 'No stations available';
+      audioSource.src = '';
+      audioPlayer.load();
+    }
+  }
+
+  // Update the station info
+  function updateStationInfo() {
+    if (availableStations.length > 0 && currentStationIndex >= 0 && currentStationIndex < availableStations.length) {
+      const station = availableStations[currentStationIndex];
+      frequencyDisplay.textContent = `${station.frequency.toFixed(1)} MHz`;
+      stationName.textContent = station.name;
+      audioSource.src = station.streamUrl;
+      audioPlayer.load();
+      audioPlayer.play(); // Auto-play the stream when station is changed
+    } else {
+      frequencyDisplay.textContent = '-- MHz';
+      stationName.textContent = 'No station available';
+      audioSource.src = '';
+      audioPlayer.load();
+    }
+  }
+
+  // Rotate knob to switch stations
+  knob.addEventListener('mousedown', (event) => {
+    // Track mouse movement to detect rotation direction
+    const startAngle = knobRotation;
+
+    // When mouse moves, calculate the difference in angle
+    const moveHandler = (moveEvent) => {
+      const deltaX = moveEvent.clientX - event.clientX; // Calculate horizontal movement
+      if (deltaX > 0) {
+        isRotatingClockwise = true; // Rightwards movement, clockwise
+      } else {
+        isRotatingClockwise = false; // Leftwards movement, counterclockwise
+      }
+
+      knobRotation = startAngle + (deltaX / 5); // Adjust rotation speed (dividing by 5)
+      knob.style.transform = `rotate(${knobRotation}deg)`; // Apply rotation to knob
+    };
+
+    // When mouse is released, stop tracking the movement
+    const mouseUpHandler = () => {
+      document.removeEventListener('mousemove', moveHandler); // Stop listening for mouse movement
+      document.removeEventListener('mouseup', mouseUpHandler); // Stop listening for mouse up
+      updateStationAfterRotation(); // Update station after the rotation
+    };
+
+    document.addEventListener('mousemove', moveHandler); // Start tracking mouse movement
+    document.addEventListener('mouseup', mouseUpHandler); // Listen for mouse up to stop rotation
+  });
+
+  // Function to update station after rotation
+  function updateStationAfterRotation() {
+    if (availableStations.length > 0) {
+      if (isRotatingClockwise) {
+        currentStationIndex = (currentStationIndex + 1) % availableStations.length; // Clockwise: Next station
+      } else {
+        currentStationIndex = (currentStationIndex - 1 + availableStations.length) % availableStations.length; // Counterclockwise: Previous station
+      }
+      updateStationInfo(); // Update the station info
+    }
+  }
+
+  // Update stations when province is changed
+  provinceSelector.addEventListener('change', updateStationsForSelectedProvince);
+</script>
+</body>
+</html>
